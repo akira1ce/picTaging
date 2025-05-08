@@ -11,13 +11,38 @@ import {
 import Modal from "react-native-modal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AntDesign } from "@expo/vector-icons";
+import Toast from "react-native-toast-message";
 
-const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
-  const [tagGroups, setTagGroups] = useState([]);
-  const [selectedTags, setSelectedTags] = useState([]);
+interface Tag {
+  id: string;
+  name: string;
+  groupId?: string;
+  isTimeTag?: boolean;
+}
+
+interface TagGroup {
+  id: string;
+  name: string;
+  tags: Tag[];
+}
+
+interface TagModalProps {
+  visible: boolean;
+  onClose: () => void;
+  image: {
+    id: string;
+    uri: string;
+    tags: Tag[];
+  } | null;
+  onUpdateTags: (tags: Tag[]) => void;
+}
+
+const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTags }) => {
+  const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [newGroupName, setNewGroupName] = useState("");
   const [newTagName, setNewTagName] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [timeTag, setTimeTag] = useState("");
 
   useEffect(() => {
@@ -35,21 +60,31 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
       }
     } catch (error) {
       console.error("加载标签组失败:", error);
+      Toast.show({
+        type: "error",
+        text1: "错误",
+        text2: "加载标签组失败",
+      });
     }
   };
 
-  const saveTagGroups = async (groups) => {
+  const saveTagGroups = async (groups: TagGroup[]) => {
     try {
       await AsyncStorage.setItem("tagGroups", JSON.stringify(groups));
       setTagGroups(groups);
     } catch (error) {
       console.error("保存标签组失败:", error);
+      Toast.show({
+        type: "error",
+        text1: "错误",
+        text2: "保存标签组失败",
+      });
     }
   };
 
   const addGroup = () => {
     if (!newGroupName.trim()) return;
-    const newGroup = {
+    const newGroup: TagGroup = {
       id: Date.now().toString(),
       name: newGroupName,
       tags: [],
@@ -57,6 +92,11 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
     const updatedGroups = [...tagGroups, newGroup];
     saveTagGroups(updatedGroups);
     setNewGroupName("");
+    Toast.show({
+      type: "success",
+      text1: "成功",
+      text2: `已添加分组「${newGroupName}」`,
+    });
   };
 
   const addTag = () => {
@@ -79,21 +119,26 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
     saveTagGroups(updatedGroups);
     setNewTagName("");
     setSelectedGroupId(null);
+    Toast.show({
+      type: "success",
+      text1: "成功",
+      text2: `已添加标签「${newTagName}」`,
+    });
   };
 
   const addTimeTag = () => {
     if (!timeTag.trim()) return;
-    
-    const timeTagObject = {
+
+    const timeTagObject: Tag = {
       id: `time-${Date.now().toString()}`,
       name: timeTag,
-      isTimeTag: true
+      isTimeTag: true,
     };
-    
+
     // Check if we already have a time tag
-    const existingTimeTagIndex = selectedTags.findIndex(tag => tag.isTimeTag);
-    
-    let newSelectedTags;
+    const existingTimeTagIndex = selectedTags.findIndex((tag) => tag.isTimeTag);
+
+    let newSelectedTags: Tag[];
     if (existingTimeTagIndex >= 0) {
       // Replace existing time tag
       newSelectedTags = [...selectedTags];
@@ -102,14 +147,19 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
       // Add new time tag
       newSelectedTags = [...selectedTags, timeTagObject];
     }
-    
+
     setSelectedTags(newSelectedTags);
     setTimeTag("");
+    Toast.show({
+      type: "success",
+      text1: "成功",
+      text2: `已设置时间标签「${timeTag}」`,
+    });
   };
 
-  const toggleTag = (groupId, tag) => {
+  const toggleTag = (groupId: string, tag: Tag) => {
     const isSelected = selectedTags.some((t) => t.id === tag.id);
-    let newSelectedTags;
+    let newSelectedTags: Tag[];
     if (isSelected) {
       newSelectedTags = selectedTags.filter((t) => t.id !== tag.id);
     } else {
@@ -118,21 +168,30 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
     setSelectedTags(newSelectedTags);
   };
 
-  const deleteGroup = (groupId) => {
+  const deleteGroup = (groupId: string) => {
     Alert.alert("删除分组", "确定要删除这个分组吗？删除后分组内的所有标签都会被删除。", [
       { text: "取消" },
       {
         text: "确定",
         onPress: () => {
+          const groupToDelete = tagGroups.find((g) => g.id === groupId);
           const updatedGroups = tagGroups.filter((group) => group.id !== groupId);
           saveTagGroups(updatedGroups);
           setSelectedTags(selectedTags.filter((tag) => tag.groupId !== groupId));
+          Toast.show({
+            type: "success",
+            text1: "成功",
+            text2: `已删除分组「${groupToDelete?.name || ""}」`,
+          });
         },
       },
     ]);
   };
 
-  const deleteTag = (groupId, tagId) => {
+  const deleteTag = (groupId: string, tagId: string) => {
+    const groupWithTag = tagGroups.find((g) => g.id === groupId);
+    const tagToDelete = groupWithTag?.tags.find((t) => t.id === tagId);
+
     Alert.alert("删除标签", "确定要删除这个标签吗？", [
       { text: "取消" },
       {
@@ -149,14 +208,30 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
           });
           saveTagGroups(updatedGroups);
           setSelectedTags(selectedTags.filter((tag) => tag.id !== tagId));
+          Toast.show({
+            type: "success",
+            text1: "成功",
+            text2: `已删除标签「${tagToDelete?.name || ""}」`,
+          });
         },
       },
     ]);
   };
 
   const handleSave = () => {
-    onUpdateTags(selectedTags);
+    const tags = selectedTags.sort((a, b) => {
+      if (a.isTimeTag && !b.isTimeTag) return -1;
+      if (!a.isTimeTag && b.isTimeTag) return 1;
+      return a.name.localeCompare(b.name, "zh-CN");
+    });
+
+    onUpdateTags(tags);
     onClose();
+    Toast.show({
+      type: "success",
+      text1: "成功",
+      text2: "标签已保存",
+    });
   };
 
   return (
@@ -164,9 +239,11 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>标签管理</Text>
-          <TouchableOpacity onPress={handleSave}>
-            <Text style={styles.saveButton}>保存</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={handleSave}>
+              <Text style={styles.saveButton}>保存</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Time Tag Section */}
@@ -179,29 +256,27 @@ const TagModal = ({ visible, onClose, image, onUpdateTags }) => {
               value={timeTag}
               onChangeText={setTimeTag}
             />
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={addTimeTag}
-            >
+            <TouchableOpacity style={styles.addButton} onPress={addTimeTag}>
               <AntDesign name="clockcircleo" size={24} color="white" />
             </TouchableOpacity>
           </View>
-          
+
           {/* Display selected time tag if exists */}
-          {selectedTags.some(tag => tag.isTimeTag) && (
+          {selectedTags.some((tag) => tag.isTimeTag) && (
             <View style={styles.selectedTimeTag}>
               <Text style={styles.selectedTimeTagLabel}>当前时间标签:</Text>
-              {selectedTags.filter(tag => tag.isTimeTag).map(tag => (
-                <View key={tag.id} style={styles.timeTagBadge}>
-                  <Text style={styles.timeTagText}>{tag.name}</Text>
-                  <TouchableOpacity 
-                    onPress={() => setSelectedTags(selectedTags.filter(t => !t.isTimeTag))}
-                    style={styles.removeTimeTagButton}
-                  >
-                    <AntDesign name="close" size={16} color="white" />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {selectedTags
+                .filter((tag) => tag.isTimeTag)
+                .map((tag) => (
+                  <View key={tag.id} style={styles.timeTagBadge}>
+                    <Text style={styles.timeTagText}>{tag.name}</Text>
+                    <TouchableOpacity
+                      onPress={() => setSelectedTags(selectedTags.filter((t) => !t.isTimeTag))}
+                      style={styles.removeTimeTagButton}>
+                      <AntDesign name="close" size={16} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
             </View>
           )}
         </View>
@@ -331,6 +406,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     paddingVertical: 8,
     paddingHorizontal: 12,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  sortButton: {
+    marginRight: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  sortButtonText: {
+    color: "#FF9800",
+    fontSize: 17,
+    fontWeight: "600",
   },
   addSection: {
     marginBottom: 16,
@@ -500,10 +589,16 @@ const styles = StyleSheet.create({
   timeTagText: {
     color: "white",
     fontWeight: "600",
-    marginRight: 4,
+    fontSize: 14,
+    marginRight: 5,
   },
   removeTimeTagButton: {
-    padding: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
 

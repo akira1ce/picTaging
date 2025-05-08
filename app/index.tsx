@@ -6,21 +6,46 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import TagModal from "@/components/TagModal";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
+
+const MAX_IMAGES = 80;
+
+interface Tag {
+  id: string;
+  name: string;
+  groupId?: string;
+  isTimeTag?: boolean;
+}
+
+interface ImageItem {
+  id: string;
+  uri: string;
+  tags: Tag[];
+}
 
 const HomeScreen = () => {
-  const [images, setImages] = useState([]);
+  const [images, setImages] = useState<ImageItem[]>([]);
   const [isTagModalVisible, setTagModalVisible] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
 
   useEffect(() => {
     (async () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
-        alert("需要相册访问权限！");
+        Toast.show({
+          type: "error",
+          text1: "权限错误",
+          text2: "需要相册访问权限！",
+        });
       }
       const cameraStatus = await ImagePicker.requestCameraPermissionsAsync();
       if (cameraStatus.status !== "granted") {
-        alert("需要相机访问权限！");
+        Toast.show({
+          type: "error",
+          text1: "权限错误",
+          text2: "需要相机访问权限！",
+        });
       }
     })();
     loadImages();
@@ -34,34 +59,30 @@ const HomeScreen = () => {
       }
     } catch (error) {
       console.error("加载图片失败:", error);
-    }
-  };
-
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1,
-    });
-
-    if (!result.canceled) {
-      const newImage = {
-        id: Date.now().toString(),
-        uri: result.assets[0].uri,
-        tags: [],
-      };
-      const updatedImages = [...images, newImage];
-      setImages(updatedImages);
-      await AsyncStorage.setItem("images", JSON.stringify(updatedImages));
+      Toast.show({
+        type: "error",
+        text1: "错误",
+        text2: "加载图片失败",
+      });
     }
   };
 
   const takePhoto = async () => {
+    if (images.length >= MAX_IMAGES) {
+      Toast.show({
+        type: "info",
+        text1: "已达上限",
+        text2: `最多只能添加${MAX_IMAGES}张图片`,
+      });
+      return;
+    }
+
     const result = await ImagePicker.launchCameraAsync({
       quality: 1,
     });
 
     if (!result.canceled) {
-      const newImage = {
+      const newImage: ImageItem = {
         id: Date.now().toString(),
         uri: result.assets[0].uri,
         tags: [],
@@ -72,25 +93,25 @@ const HomeScreen = () => {
     }
   };
 
-  const openTagModal = (image) => {
+  const openTagModal = (image: ImageItem) => {
     setSelectedImage(image);
     setTagModalVisible(true);
   };
 
-  const updateImageTags = async (imageId, tags) => {
+  const updateImageTags = async (imageId: string, tags: Tag[]) => {
     const updatedImages = images.map((img) => (img.id === imageId ? { ...img, tags } : img));
     setImages(updatedImages);
     await AsyncStorage.setItem("images", JSON.stringify(updatedImages));
   };
 
-  const generateUniqueFileName = (tags, usedNames) => {
+  const generateUniqueFileName = (tags: Tag[], usedNames: Set<string>) => {
     // 如果没有标签，使用时间戳
     if (!tags || tags.length === 0) {
       return `image_${Date.now()}`;
     }
 
     // 使用标签名称生成基础文件名
-    const baseFileName = tags.map(tag => tag.name).join('_');
+    const baseFileName = tags.map((tag) => tag.name).join("_");
     let fileName = baseFileName;
     let counter = 1;
 
@@ -107,14 +128,22 @@ const HomeScreen = () => {
   const exportImages = async () => {
     try {
       if (images.length === 0) {
-        Alert.alert("提示", "没有可导出的图片");
+        Toast.show({
+          type: "info",
+          text1: "提示",
+          text2: "没有可导出的图片",
+        });
         return;
       }
 
       // 请求相册权限
       const perm = await MediaLibrary.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("提示", "需要相册访问权限才能保存文件");
+        Toast.show({
+          type: "error",
+          text1: "权限错误",
+          text2: "需要相册访问权限才能保存文件",
+        });
         return;
       }
 
@@ -122,12 +151,16 @@ const HomeScreen = () => {
       const BATCH_SIZE = 10; // 每批处理的图片数量
       const totalBatches = Math.ceil(images.length / BATCH_SIZE);
       let processedCount = 0;
-      
+
       // 显示进度提示
-      Alert.alert("导出开始", `正在导出 ${images.length} 张图片，请稍候...`);
-      
+      Toast.show({
+        type: "info",
+        text1: "导出开始",
+        text2: `正在导出 ${images.length} 张图片，请稍候...`,
+      });
+
       // 用于跟踪已使用的文件名
-      const usedNames = new Set();
+      const usedNames = new Set<string>();
 
       // 创建或获取相册
       let picTagingAlbum = await MediaLibrary.getAlbumAsync("picTaging");
@@ -137,17 +170,21 @@ const HomeScreen = () => {
           const tempFile = `${FileSystem.cacheDirectory}album_init.jpg`;
           await FileSystem.copyAsync({
             from: images[0].uri,
-            to: tempFile
+            to: tempFile,
           });
-          
+
           const initialAsset = await MediaLibrary.createAssetAsync(tempFile);
           picTagingAlbum = await MediaLibrary.createAlbumAsync("picTaging", initialAsset);
-          
+
           // 清理临时文件
           await FileSystem.deleteAsync(tempFile, { idempotent: true });
         } catch (err) {
           console.error("创建相册失败:", err);
-          Alert.alert("错误", "创建相册失败");
+          Toast.show({
+            type: "error",
+            text1: "错误",
+            text2: "创建相册失败",
+          });
           return;
         }
       }
@@ -157,7 +194,7 @@ const HomeScreen = () => {
         const startIndex = batchIndex * BATCH_SIZE;
         const endIndex = Math.min(startIndex + BATCH_SIZE, images.length);
         const batchImages = images.slice(startIndex, endIndex);
-        
+
         // 处理当前批次的图片
         const batchAssets = [];
         for (const img of batchImages) {
@@ -168,7 +205,7 @@ const HomeScreen = () => {
             const tempFile = `${FileSystem.cacheDirectory}${fileName}.jpg`;
             await FileSystem.copyAsync({
               from: img.uri,
-              to: tempFile
+              to: tempFile,
             });
             const asset = await MediaLibrary.createAssetAsync(tempFile);
             if (asset) {
@@ -176,7 +213,7 @@ const HomeScreen = () => {
             }
             // 清理临时文件
             await FileSystem.deleteAsync(tempFile, { idempotent: true });
-            
+
             processedCount++;
           } catch (err) {
             console.warn(`创建资产失败: ${img.uri}`, err);
@@ -192,61 +229,70 @@ const HomeScreen = () => {
             console.error("添加资产到相册失败:", err);
           }
         }
-        
+
         // 更新进度提示
         if (batchIndex < totalBatches - 1) {
           console.log(`导出进度: ${processedCount}/${images.length}`);
         }
       }
 
-      Alert.alert("成功", `已成功导出 ${processedCount} 张图片到 picTaging 相册`);
+      Toast.show({
+        type: "success",
+        text1: "成功",
+        text2: `已成功导出 ${processedCount} 张图片到 picTaging 相册`,
+      });
     } catch (err) {
       console.error("导出过程失败:", err);
-      Alert.alert("错误", "导出失败，请重试");
+      Toast.show({
+        type: "error",
+        text1: "错误",
+        text2: "导出失败，请重试",
+      });
     }
   };
 
   const clearAllImages = () => {
     if (images.length === 0) {
-      Alert.alert("提示", "列表已为空");
+      Toast.show({
+        type: "info",
+        text1: "提示",
+        text2: "列表已为空",
+      });
       return;
     }
-    
-    Alert.alert(
-      "清空列表",
-      "确定要删除所有图片吗？此操作不可恢复",
-      [
-        { text: "取消" },
-        {
-          text: "确定",
-          onPress: async () => {
-            setImages([]);
-            await AsyncStorage.setItem("images", JSON.stringify([]));
-          }
-        }
-      ]
-    );
+
+    Alert.alert("清空列表", "确定要删除所有图片吗？此操作不可恢复", [
+      { text: "取消" },
+      {
+        text: "确定",
+        onPress: async () => {
+          setImages([]);
+          await AsyncStorage.setItem("images", JSON.stringify([]));
+          Toast.show({
+            type: "success",
+            text1: "成功",
+            text2: "已清空所有图片",
+          });
+        },
+      },
+    ]);
   };
 
-  const deleteImage = (imageId) => {
-    Alert.alert(
-      "删除图片",
-      "确定要删除这张图片吗？",
-      [
-        { text: "取消" },
-        {
-          text: "确定",
-          onPress: async () => {
-            const updatedImages = images.filter(img => img.id !== imageId);
-            setImages(updatedImages);
-            await AsyncStorage.setItem("images", JSON.stringify(updatedImages));
-          }
-        }
-      ]
-    );
+  const deleteImage = (imageId: string) => {
+    Alert.alert("删除图片", "确定要删除这张图片吗？", [
+      { text: "取消" },
+      {
+        text: "确定",
+        onPress: async () => {
+          const updatedImages = images.filter((img) => img.id !== imageId);
+          setImages(updatedImages);
+          await AsyncStorage.setItem("images", JSON.stringify(updatedImages));
+        },
+      },
+    ]);
   };
 
-  const renderItem = ({ item }) => (
+  const renderItem = ({ item }: { item: ImageItem }) => (
     <View style={styles.imageContainer}>
       <TouchableOpacity style={styles.imageWrapper} onPress={() => openTagModal(item)}>
         <Image source={{ uri: item.uri }} style={styles.image} />
@@ -258,17 +304,14 @@ const HomeScreen = () => {
           ))}
         </View>
       </TouchableOpacity>
-      <TouchableOpacity 
-        style={styles.deleteButton}
-        onPress={() => deleteImage(item.id)}
-      >
+      <TouchableOpacity style={styles.deleteButton} onPress={() => deleteImage(item.id)}>
         <AntDesign name="delete" size={20} color="#ff4444" />
       </TouchableOpacity>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <FlatList
         data={images}
         renderItem={renderItem}
@@ -281,13 +324,12 @@ const HomeScreen = () => {
         <TouchableOpacity style={styles.button} onPress={takePhoto}>
           <AntDesign name="camera" size={24} color="white" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={pickImage}>
-          <AntDesign name="picture" size={24} color="white" />
-        </TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={exportImages}>
           <AntDesign name="export" size={24} color="white" />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.button, {backgroundColor: '#ff4444'}]} onPress={clearAllImages}>
+        <TouchableOpacity
+          style={[styles.button, { backgroundColor: "#ff4444" }]}
+          onPress={clearAllImages}>
           <AntDesign name="delete" size={24} color="white" />
         </TouchableOpacity>
       </View>
@@ -296,9 +338,9 @@ const HomeScreen = () => {
         visible={isTagModalVisible}
         onClose={() => setTagModalVisible(false)}
         image={selectedImage}
-        onUpdateTags={(tags) => updateImageTags(selectedImage?.id, tags)}
+        onUpdateTags={(tags) => updateImageTags(selectedImage?.id || "", tags)}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
