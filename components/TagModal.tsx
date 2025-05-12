@@ -40,16 +40,18 @@ interface TagModalProps {
 const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTags }) => {
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [newTagName, setNewTagName] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [timeTag, setTimeTag] = useState("");
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     loadTagGroups();
     if (image?.tags) {
       setSelectedTags(image.tags);
+    } else {
+      setSelectedTags([]);
     }
+    setTimeTag("");
+    setSearchText("");
   }, [image]);
 
   const loadTagGroups = async () => {
@@ -66,64 +68,6 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
         text2: "加载标签组失败",
       });
     }
-  };
-
-  const saveTagGroups = async (groups: TagGroup[]) => {
-    try {
-      await AsyncStorage.setItem("tagGroups", JSON.stringify(groups));
-      setTagGroups(groups);
-    } catch (error) {
-      console.error("保存标签组失败:", error);
-      Toast.show({
-        type: "error",
-        text1: "错误",
-        text2: "保存标签组失败",
-      });
-    }
-  };
-
-  const addGroup = () => {
-    if (!newGroupName.trim()) return;
-    const newGroup: TagGroup = {
-      id: Date.now().toString(),
-      name: newGroupName,
-      tags: [],
-    };
-    const updatedGroups = [...tagGroups, newGroup];
-    saveTagGroups(updatedGroups);
-    setNewGroupName("");
-    Toast.show({
-      type: "success",
-      text1: "成功",
-      text2: `已添加分组「${newGroupName}」`,
-    });
-  };
-
-  const addTag = () => {
-    if (!newTagName.trim() || !selectedGroupId) return;
-    const updatedGroups = tagGroups.map((group) => {
-      if (group.id === selectedGroupId) {
-        return {
-          ...group,
-          tags: [
-            ...group.tags,
-            {
-              id: Date.now().toString(),
-              name: newTagName,
-            },
-          ],
-        };
-      }
-      return group;
-    });
-    saveTagGroups(updatedGroups);
-    setNewTagName("");
-    setSelectedGroupId(null);
-    Toast.show({
-      type: "success",
-      text1: "成功",
-      text2: `已添加标签「${newTagName}」`,
-    });
   };
 
   const addTimeTag = () => {
@@ -168,56 +112,6 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
     setSelectedTags(newSelectedTags);
   };
 
-  const deleteGroup = (groupId: string) => {
-    Alert.alert("删除分组", "确定要删除这个分组吗？删除后分组内的所有标签都会被删除。", [
-      { text: "取消" },
-      {
-        text: "确定",
-        onPress: () => {
-          const groupToDelete = tagGroups.find((g) => g.id === groupId);
-          const updatedGroups = tagGroups.filter((group) => group.id !== groupId);
-          saveTagGroups(updatedGroups);
-          setSelectedTags(selectedTags.filter((tag) => tag.groupId !== groupId));
-          Toast.show({
-            type: "success",
-            text1: "成功",
-            text2: `已删除分组「${groupToDelete?.name || ""}」`,
-          });
-        },
-      },
-    ]);
-  };
-
-  const deleteTag = (groupId: string, tagId: string) => {
-    const groupWithTag = tagGroups.find((g) => g.id === groupId);
-    const tagToDelete = groupWithTag?.tags.find((t) => t.id === tagId);
-
-    Alert.alert("删除标签", "确定要删除这个标签吗？", [
-      { text: "取消" },
-      {
-        text: "确定",
-        onPress: () => {
-          const updatedGroups = tagGroups.map((group) => {
-            if (group.id === groupId) {
-              return {
-                ...group,
-                tags: group.tags.filter((tag) => tag.id !== tagId),
-              };
-            }
-            return group;
-          });
-          saveTagGroups(updatedGroups);
-          setSelectedTags(selectedTags.filter((tag) => tag.id !== tagId));
-          Toast.show({
-            type: "success",
-            text1: "成功",
-            text2: `已删除标签「${tagToDelete?.name || ""}」`,
-          });
-        },
-      },
-    ]);
-  };
-
   const handleSave = () => {
     const tags = selectedTags.sort((a, b) => {
       if (a.isTimeTag && !b.isTimeTag) return -1;
@@ -234,15 +128,74 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
     });
   };
 
+  const clearAllTags = () => {
+    if (selectedTags.length === 0) {
+      Toast.show({
+        type: "info",
+        text1: "提示",
+        text2: "没有已选择的标签",
+      });
+      return;
+    }
+
+    Alert.alert("清空标签", "确定要清空所有已选择的标签吗？", [
+      { text: "取消" },
+      {
+        text: "确定",
+        onPress: () => {
+          setSelectedTags([]);
+          Toast.show({
+            type: "success",
+            text1: "成功",
+            text2: "已清空所有标签",
+          });
+        },
+      },
+    ]);
+  };
+
+  // Filter tags based on search input
+  const getFilteredGroups = () => {
+    if (!searchText.trim()) return tagGroups;
+
+    return tagGroups
+      .map((group) => ({
+        ...group,
+        tags: group.tags.filter((tag) => tag.name.toLowerCase().includes(searchText.toLowerCase())),
+      }))
+      .filter((group) => group.tags.length > 0);
+  };
+
   return (
     <Modal isVisible={visible} onBackdropPress={onClose} style={styles.modal}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>标签管理</Text>
+          <Text style={styles.title}>为图片添加标签</Text>
           <View style={styles.headerButtons}>
+            <TouchableOpacity onPress={clearAllTags} style={styles.clearButton}>
+              <Text style={styles.clearButtonText}>清空</Text>
+            </TouchableOpacity>
             <TouchableOpacity onPress={handleSave}>
               <Text style={styles.saveButton}>保存</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <AntDesign name="search1" size={20} color="#aaa" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="搜索标签..."
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchText("")} style={styles.clearSearchButton}>
+                <AntDesign name="close" size={16} color="#aaa" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -281,64 +234,22 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
           )}
         </View>
 
-        <View style={styles.addSection}>
-          <View style={styles.addGroupSection}>
-            <TextInput
-              style={styles.input}
-              placeholder="新建分组"
-              value={newGroupName}
-              onChangeText={setNewGroupName}
-            />
-            <TouchableOpacity style={styles.addButton} onPress={addGroup}>
-              <AntDesign name="plus" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.addTagSection}>
-            <View style={styles.tagInputContainer}>
-              <TextInput
-                style={[styles.input, !selectedGroupId && styles.inputDisabled]}
-                placeholder={selectedGroupId ? "新建标签" : "请先选择分组"}
-                value={newTagName}
-                onChangeText={setNewTagName}
-                editable={!!selectedGroupId}
-              />
-              <TouchableOpacity
-                style={[styles.addButton, !selectedGroupId && styles.disabled]}
-                onPress={addTag}
-                disabled={!selectedGroupId}>
-                <AntDesign name="plus" size={24} color="white" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
+        <Text style={styles.allTagsTitle}>所有标签</Text>
         <ScrollView style={styles.groupsContainer}>
-          {tagGroups.map((group) => (
-            <View key={group.id} style={styles.groupSection}>
-              <TouchableOpacity
-                style={[
-                  styles.groupHeader,
-                  selectedGroupId === group.id && styles.groupHeaderSelected,
-                ]}
-                onPress={() => {
-                  setSelectedGroupId(selectedGroupId === group.id ? null : group.id);
-                }}>
-                <View style={styles.groupHeaderLeft}>
+          {getFilteredGroups().length === 0 ? (
+            <View style={styles.emptyContainer}>
+              {searchText.length > 0 ? (
+                <Text style={styles.emptyText}>没有找到匹配的标签</Text>
+              ) : (
+                <Text style={styles.emptyText}>暂无标签分组，请先在标签管理页面创建标签</Text>
+              )}
+            </View>
+          ) : (
+            getFilteredGroups().map((group) => (
+              <View key={group.id} style={styles.groupSection}>
+                <View style={styles.groupHeader}>
                   <Text style={styles.groupName}>{group.name}</Text>
                 </View>
-                <View style={styles.groupHeaderRight}>
-                  <TouchableOpacity
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      deleteGroup(group.id);
-                    }}
-                    style={styles.deleteGroupButton}>
-                    <AntDesign name="delete" size={20} color="#ff4444" />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-              <>
                 <View style={styles.tagsContainer}>
                   {group.tags.map((tag) => (
                     <TouchableOpacity
@@ -347,8 +258,7 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
                         styles.tag,
                         selectedTags.some((t) => t.id === tag.id) && styles.tagSelected,
                       ]}
-                      onPress={() => toggleTag(group.id, tag)}
-                      onLongPress={() => deleteTag(group.id, tag.id)}>
+                      onPress={() => toggleTag(group.id, tag)}>
                       <Text
                         style={[
                           styles.tagText,
@@ -359,9 +269,9 @@ const TagModal: React.FC<TagModalProps> = ({ visible, onClose, image, onUpdateTa
                     </TouchableOpacity>
                   ))}
                 </View>
-              </>
-            </View>
-          ))}
+              </View>
+            ))
+          )}
         </ScrollView>
       </View>
     </Modal>
@@ -377,7 +287,7 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
-    padding: 24,
+    padding: 16,
     height: "85%",
     shadowColor: "#000",
     shadowOffset: {
@@ -392,17 +302,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
-    paddingHorizontal: 4,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#1a1a1a",
   },
   saveButton: {
     color: "#2196F3",
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "600",
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -411,29 +320,54 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  sortButton: {
+  clearButton: {
     marginRight: 8,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  sortButtonText: {
-    color: "#FF9800",
-    fontSize: 17,
+  clearButtonText: {
+    color: "#FF5722",
+    fontSize: 16,
     fontWeight: "600",
   },
-  addSection: {
+  searchContainer: {
     marginBottom: 16,
   },
-  addGroupSection: {
+  searchInputContainer: {
     flexDirection: "row",
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    height: 40,
   },
-  addTagSection: {
-    paddingHorizontal: 4,
+  searchIcon: {
+    marginRight: 8,
   },
-  tagInputContainer: {
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#333",
+  },
+  clearSearchButton: {
+    padding: 4,
+  },
+  timeTagSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 12,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 10,
+    color: "#333",
+  },
+  timeTagInputContainer: {
     flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
   },
   input: {
     flex: 1,
@@ -460,112 +394,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-  },
-  disabled: {
-    backgroundColor: "#bdbdbd",
-    opacity: 0.7,
-  },
-  groupsContainer: {
-    flex: 1,
-    paddingHorizontal: 4,
-  },
-  groupSection: {
-    marginBottom: 20,
-    borderRadius: 16,
-    backgroundColor: "#fff",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  groupHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#f8f9fa",
-    borderRadius: 16,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  groupHeaderSelected: {
-    backgroundColor: "#e3f2fd",
-    borderColor: "#2196F3",
-    borderWidth: 1,
-  },
-  inputDisabled: {
-    backgroundColor: "#f5f5f5",
-    borderColor: "#ddd",
-  },
-  groupHeaderLeft: {
-    flex: 1,
-  },
-  groupHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  deleteGroupButton: {
-    marginRight: 16,
-    padding: 8,
-  },
-  groupName: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#2c3e50",
-  },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    padding: 12,
-    backgroundColor: "#fff",
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-  },
-  tag: {
-    backgroundColor: "#f1f3f5",
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginRight: 4,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  tagSelected: {
-    backgroundColor: "#2196F3",
-    borderColor: "#1976D2",
-  },
-  tagText: {
-    color: "#495057",
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  tagSelectedText: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  timeTagSection: {
-    marginBottom: 24,
-    padding: 4,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 10,
-    color: "#333",
-  },
-  timeTagInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
   },
   selectedTimeTag: {
     flexDirection: "row",
@@ -599,6 +427,112 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.2)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  selectedTagsSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 12,
+  },
+  selectedTagsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  selectedTagBadge: {
+    backgroundColor: "#E3F2FD",
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#90CAF9",
+  },
+  selectedTagText: {
+    color: "#1976D2",
+    fontWeight: "500",
+    fontSize: 14,
+    marginRight: 5,
+  },
+  removeSelectedTagButton: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#E0E0E0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  allTagsTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 10,
+    color: "#333",
+    marginLeft: 4,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 40,
+    marginBottom: 40,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: "#888",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  groupsContainer: {
+    flex: 1,
+  },
+  groupSection: {
+    marginBottom: 16,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    overflow: "hidden",
+  },
+  groupHeader: {
+    padding: 10,
+    backgroundColor: "#f8f9fa",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  groupName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+  },
+  tagsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 10,
+    backgroundColor: "#fff",
+  },
+  tag: {
+    backgroundColor: "#f1f3f5",
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginRight: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#e9ecef",
+  },
+  tagSelected: {
+    backgroundColor: "#2196F3",
+    borderColor: "#1976D2",
+  },
+  tagText: {
+    color: "#495057",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  tagSelectedText: {
+    color: "#ffffff",
+    fontWeight: "600",
   },
 });
 

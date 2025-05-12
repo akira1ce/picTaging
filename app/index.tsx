@@ -8,6 +8,7 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+import { router } from "expo-router";
 
 const MAX_IMAGES = 80;
 
@@ -292,6 +293,10 @@ const HomeScreen = () => {
     ]);
   };
 
+  const navigateToTagManagement = () => {
+    router.push("/tag-management" as any);
+  };
+
   const renderItem = ({ item }: { item: ImageItem }) => (
     <View style={styles.imageContainer}>
       <TouchableOpacity style={styles.imageWrapper} onPress={() => openTagModal(item)}>
@@ -312,6 +317,21 @@ const HomeScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.titleText}>照片墙</Text>
+        <TouchableOpacity style={styles.tagManageButton} onPress={navigateToTagManagement}>
+          <AntDesign name="tags" size={22} color="#2196F3" />
+          <Text style={styles.tagManageText}>标签管理</Text>
+        </TouchableOpacity>
+      </View>
+
+      {!images.length && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>暂无图片</Text>
+          <Text style={styles.emptySubText}>点击下方按钮添加图片</Text>
+        </View>
+      )}
+
       <FlatList
         data={images}
         renderItem={renderItem}
@@ -348,6 +368,44 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  titleText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  tagManageButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 8,
+  },
+  tagManageText: {
+    marginLeft: 4,
+    color: "#2196F3",
+    fontWeight: "500",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyText: {
+    fontSize: 18,
+    color: "#888",
+    marginBottom: 8,
+  },
+  emptySubText: {
+    fontSize: 14,
+    color: "#aaa",
   },
   list: {
     padding: 10,
